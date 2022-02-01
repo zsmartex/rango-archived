@@ -3,10 +3,10 @@ package routing
 import (
 	"testing"
 
-	"github.com/openware/rango/pkg/message"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/zsmartex/rango/pkg/message"
 )
 
 type MockedClient struct {
@@ -220,16 +220,6 @@ func TestAuthenticated(t *testing.T) {
 		assert.Equal(t, 0, len(h.PublicTopics))
 		assert.Equal(t, 0, len(h.PrivateTopics))
 	})
-}
-
-func TestIsIncremental(t *testing.T) {
-	assert.True(t, isIncrementObject("public.eurusd.ob-inc"))
-	assert.False(t, isIncrementObject("public.eurusd.ob-snap"))
-	assert.False(t, isIncrementObject("public.eurusd.ob"))
-
-	assert.True(t, isSnapshotObject("public.eurusd.ob-snap"))
-	assert.False(t, isSnapshotObject("public.eurusd.ob-inc"))
-	assert.False(t, isSnapshotObject("public.eurusd.ob"))
 }
 
 func TestGetTopic(t *testing.T) {

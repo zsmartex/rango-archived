@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	msg "github.com/openware/rango/pkg/message"
-	"github.com/openware/rango/pkg/metrics"
 	"github.com/rs/zerolog/log"
+	msg "github.com/zsmartex/rango/pkg/message"
+	"github.com/zsmartex/rango/pkg/metrics"
 )
 
 const (

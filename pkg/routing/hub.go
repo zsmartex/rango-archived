@@ -1,17 +1,15 @@
 package routing
 
 import (
-	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"sync"
 
-	msg "github.com/openware/rango/pkg/message"
-	"github.com/openware/rango/pkg/metrics"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/streadway/amqp"
+	msg "github.com/zsmartex/rango/pkg/message"
+	"github.com/zsmartex/rango/pkg/metrics"
 )
 
 type Request struct {
@@ -71,14 +69,6 @@ func NewHub(rbac map[string][]string) *Hub {
 	}
 }
 
-func isIncrementObject(s string) bool {
-	return strings.HasSuffix(s, "-inc")
-}
-
-func isSnapshotObject(s string) bool {
-	return strings.HasSuffix(s, "-snap")
-}
-
 func isDebug() bool {
 	return log.Logger.GetLevel() <= zerolog.DebugLevel
 }
@@ -88,9 +78,6 @@ func isTrace() bool {
 }
 
 func getTopic(scope, stream, typ string) string {
-	if isSnapshotObject(typ) {
-		typ = strings.Replace(typ, "-snap", "-inc", 1)
-	}
 	if scope == "private" {
 		return typ
 	}
@@ -112,119 +99,17 @@ func (h *Hub) ListenWebsocketEvents() {
 }
 
 // ReceiveMsg handles AMQP messages
-func (h *Hub) ReceiveMsg(delivery amqp.Delivery) {
-	if isTrace() {
-		log.Trace().Msgf("AMQP msg received: %s -> %s", delivery.RoutingKey, delivery.Body)
-	}
-	s := strings.Split(delivery.RoutingKey, ".")
+func (h *Hub) ReceiveMsg(msg *kafka.Message) {
+	key_arr := strings.Split(string(msg.Key), ".") // public.ethusdt.depth | private.UIDABC00001.balance
+	scope := key_arr[0]
 
-	var o interface{}
-	err := json.Unmarshal(delivery.Body, &o)
-
-	if err != nil {
-		log.Error().Msgf("JSON parse error: %s, msg: %s", err.Error(), delivery.Body)
-		return
-	}
-
-	switch len(s) {
-	case 2:
-		msg := Event{
-			Scope:  s[0],
-			Stream: "",
-			Type:   s[1],
-			Topic:  getTopic(s[0], s[0], s[1]),
-			Body:   o,
-		}
-
-		h.routeMessage(&msg)
-
-	case 3:
-		msg := Event{
-			Scope:  s[0],
-			Stream: s[1],
-			Type:   s[2],
-			Topic:  getTopic(s[0], s[1], s[2]),
-			Body:   o,
-		}
-
-		h.routeMessage(&msg)
-
-	default:
-		log.Error().Msgf("Bad routing key: %s", delivery.RoutingKey)
-	}
-}
-
-func (h *Hub) SkipPrivateMsg(delivery amqp.Delivery) {
-	if strings.HasPrefix(delivery.RoutingKey, "private") {
-		return
-	}
-
-	h.ReceiveMsg(delivery)
-}
-
-func (h *Hub) handleSnapshot(msg *Event) (string, error) {
-	topic := msg.Stream + "." + msg.Type
-	body, err := json.Marshal(map[string]interface{}{
-		topic: msg.Body,
+	h.routeMessage(&Event{
+		Scope:  scope,
+		Stream: key_arr[1],
+		Type:   key_arr[2],
+		Topic:  getTopic(scope, key_arr[1], key_arr[2]),
+		Body:   msg.Value,
 	})
-
-	if err != nil {
-		return "", err
-	}
-
-	o, ok := h.IncrementalObjects[msg.Topic]
-	if !ok {
-		o = &IncrementalObject{}
-		h.IncrementalObjects[msg.Topic] = o
-	}
-	o.Snapshot = string(body)
-	o.Increments = []string{}
-
-	return string(body), nil
-}
-
-func (h *Hub) handleIncrement(msg *Event) (string, error) {
-	body, err := json.Marshal(map[string]interface{}{
-		msg.Topic: msg.Body,
-	})
-
-	if err != nil {
-		return "", err
-	}
-
-	o, ok := h.IncrementalObjects[msg.Topic]
-	if !ok {
-		return "", fmt.Errorf("No snapshot received before the increment for topic %s, ignoring", msg.Topic)
-	}
-	o.Increments = append(o.Increments, string(body))
-	return string(body), nil
-
-}
-
-func (h *Hub) handleMessage(topic *Topic, ok bool, msg *Event) {
-	switch {
-	case isIncrementObject(msg.Type):
-		rm, err := h.handleIncrement(msg)
-		if err != nil {
-			log.Error().Msgf("handleIncrement failed: %s", err.Error())
-			return
-		}
-		if ok {
-			topic.broadcastRaw(rm)
-		}
-
-	case isSnapshotObject(msg.Type):
-		_, err := h.handleSnapshot(msg)
-		if err != nil {
-			log.Error().Msgf("handleSnapshot failed: %s", err.Error())
-			return
-		}
-
-	default:
-		if ok {
-			topic.broadcast(msg)
-		}
-	}
 }
 
 func (h *Hub) routeMessage(msg *Event) {
@@ -237,7 +122,9 @@ func (h *Hub) routeMessage(msg *Event) {
 	switch msg.Scope {
 	case "public", "global":
 		topic, ok := h.PublicTopics[msg.Topic]
-		h.handleMessage(topic, ok, msg)
+		if ok {
+			topic.broadcast(msg)
+		}
 
 		if !ok {
 			if isTrace() {
@@ -393,16 +280,6 @@ func (h *Hub) subscribePublic(t string, req *Request) {
 		metrics.RecordHubSubscription("public", t)
 		req.client.SubscribePublic(t)
 	}
-
-	if isIncrementObject(t) {
-		o, ok := h.IncrementalObjects[t]
-		if ok && o.Snapshot != "" {
-			req.client.Send(o.Snapshot)
-			for _, inc := range o.Increments {
-				req.client.Send(inc)
-			}
-		}
-	}
 }
 
 func (h *Hub) premittedRBAC(prefix string, auth Auth) bool {
@@ -451,16 +328,6 @@ func (h *Hub) subscribePrefixed(prefixed string, req *Request) {
 	if topic.subscribe(req.client) {
 		metrics.RecordHubSubscription("prefixed", prefixed)
 		req.client.SubscribePublic(prefixed)
-	}
-
-	if isIncrementObject(t) {
-		o, ok := h.IncrementalObjects[t]
-		if ok && o.Snapshot != "" {
-			req.client.Send(o.Snapshot)
-			for _, inc := range o.Increments {
-				req.client.Send(inc)
-			}
-		}
 	}
 }
 

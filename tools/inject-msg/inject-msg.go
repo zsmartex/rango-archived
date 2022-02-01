@@ -8,12 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openware/rango/pkg/amqp"
 	"github.com/rs/zerolog/log"
 )
 
 var (
-	ex       = flag.String("exchange", "peatio.events.ranger", "Exchange name of upstream messages")
+	ex       = flag.String("exchange", "rango.events", "Exchange name of upstream messages")
 	amqpAddr = flag.String("amqp-addr", "amqp://localhost:5672", "AMQP server address")
 	wait     = flag.Float64("wait", 2, "Time to wait between submit batch of messages")
 )
@@ -21,7 +20,7 @@ var (
 func main() {
 	flag.Parse()
 
-	mq, err := amqp.NewAMQPSession(*amqpAddr)
+	// mq, err := amqp.NewAMQPSession(*amqpAddr)
 
 	if err != nil {
 		log.Error().Msg(err.Error())

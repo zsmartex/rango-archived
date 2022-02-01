@@ -9,23 +9,23 @@ import (
 	"strings"
 	"time"
 
-	"math/rand"
-
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	"github.com/openware/rango/pkg/amqp"
-	"github.com/openware/rango/pkg/auth"
-	"github.com/openware/rango/pkg/metrics"
-	"github.com/openware/rango/pkg/routing"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
+	"github.com/zsmartex/pkg/services"
+
+	"github.com/zsmartex/rango/pkg/auth"
+	"github.com/zsmartex/rango/pkg/metrics"
+	"github.com/zsmartex/rango/pkg/routing"
 )
 
 var (
 	wsAddr   = flag.String("ws-addr", "", "http service address")
 	amqpAddr = flag.String("amqp-addr", "", "AMQP server address")
 	pubKey   = flag.String("pubKey", "config/rsa-key.pub", "Path to public key")
-	exName   = flag.String("exchange", "peatio.events.ranger", "Exchange name of upstream messages")
+	exName   = flag.String("exchange", "rango.events", "Exchange name of upstream messages")
 )
 
 const prefix = "Bearer "
@@ -103,19 +103,6 @@ func getEnv(name, value string) string {
 	return v
 }
 
-func getAMQPConnectionURL() string {
-	if *amqpAddr != "" {
-		return *amqpAddr
-	}
-
-	user := getEnv("RABBITMQ_USER", "guest")
-	pass := getEnv("RABBITMQ_PASSWORD", "guest")
-	host := getEnv("RABBITMQ_HOST", "localhost")
-	port := getEnv("RABBITMQ_PORT", "5672")
-
-	return fmt.Sprintf("amqp://%s:%s@%s:%s", user, pass, host, port)
-}
-
 func getServerAddress() string {
 	if *wsAddr != "" {
 		return *wsAddr
@@ -175,37 +162,15 @@ func main() {
 		return
 	}
 
-	rand.Seed(time.Now().UnixNano())
-	globalQName := fmt.Sprintf("rango.instance.%d", rand.Int())
-	privateQName := fmt.Sprintf("rango.instance.private-%d", rand.Int())
+	kafka_client := services.NewKafka()
 
-	// Establish AMQP session for all non private events
-	globalMq, err := amqp.NewAMQPSession(getAMQPConnectionURL())
-	if err != nil {
-		log.Fatal().Msgf("creating new AMQP session failed: %s", err.Error())
-		return
-	}
-	err = globalMq.Stream(*exName, globalQName, "#", hub.SkipPrivateMsg)
-	defer globalMq.Close(globalQName)
+	go func() {
+		kafka_client.Subscribe(*exName, func(msg *kafka.Message) error {
+			hub.ReceiveMsg(msg)
 
-	if err != nil {
-		log.Fatal().Msgf("AMQP init failed: %s", err.Error())
-		return
-	}
-
-	// Establish AMQP session for private events
-	privateMq, err := amqp.NewAMQPSession(getAMQPConnectionURL())
-	if err != nil {
-		log.Fatal().Msgf("creating new AMQP session failed: %s", err.Error())
-		return
-	}
-	err = privateMq.Stream(*exName, privateQName, "private.#", hub.ReceiveMsg)
-	defer privateMq.Close(privateQName)
-
-	if err != nil {
-		log.Fatal().Msgf("AMQP init failed: %s", err.Error())
-		return
-	}
+			return nil
+		})
+	}()
 
 	go hub.ListenWebsocketEvents()
 

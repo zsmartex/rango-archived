@@ -4,7 +4,7 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/openware/rango/pkg/auth"
+	"github.com/zsmartex/rango/pkg/auth"
 )
 
 var (

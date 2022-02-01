@@ -3,8 +3,8 @@ package routing
 import (
 	"encoding/json"
 
-	msg "github.com/openware/rango/pkg/message"
 	"github.com/rs/zerolog/log"
+	msg "github.com/zsmartex/rango/pkg/message"
 )
 
 type Topic struct {
