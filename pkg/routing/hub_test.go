@@ -1,6 +1,7 @@
 package routing
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -239,107 +240,17 @@ func TestHandleMessage(t *testing.T) {
 		client: c,
 	})
 
+	body, _ := json.Marshal(map[string]interface{}{
+		"some": "data",
+	})
+
 	h.routeMessage(&Event{
 		Scope:  "public",
 		Stream: "abc",
 		Type:   "ticker",
 		Topic:  "abc.ticker",
-		Body: map[string]interface{}{
-			"some": "data",
-		},
+		Body:   body,
 	})
 
 	c.AssertExpectations(t)
-}
-
-func TestIncrementalObjectStorage(t *testing.T) {
-	h := NewHub(nil)
-
-	// Increments before the first snapshot must be ignored
-	h.routeMessage(&Event{
-		Scope:  "public",
-		Stream: "abc",
-		Type:   "count-inc",
-		Topic:  "abc.count-inc",
-		Body: map[string]interface{}{
-			"data":     1,
-			"sequence": 11,
-		},
-	})
-
-	require.Equal(t, 0, len(h.IncrementalObjects))
-
-	// Initial snapshot
-	h.routeMessage(&Event{
-		Scope:  "public",
-		Stream: "abc",
-		Type:   "count-snap",
-		Topic:  "abc.count-inc",
-		Body: map[string]interface{}{
-			"data":     []int{2, 3, 4},
-			"sequence": 12,
-		},
-	})
-
-	require.Equal(t, 1, len(h.IncrementalObjects))
-
-	o, ok := h.IncrementalObjects["abc.count-inc"]
-	require.True(t, ok)
-	require.Equal(t, 0, len(o.Increments))
-	require.Equal(t, `{"abc.count-snap":{"data":[2,3,4],"sequence":12}}`, o.Snapshot)
-
-	// First Increment
-	h.routeMessage(&Event{
-		Scope:  "public",
-		Stream: "abc",
-		Type:   "count-inc",
-		Topic:  "abc.count-inc",
-		Body: map[string]interface{}{
-			"data":     5,
-			"sequence": 13,
-		},
-	})
-	require.Equal(t, 1, len(h.IncrementalObjects))
-	o, ok = h.IncrementalObjects["abc.count-inc"]
-	require.True(t, ok)
-	require.Equal(t, 1, len(o.Increments))
-	require.Equal(t, `{"abc.count-snap":{"data":[2,3,4],"sequence":12}}`, o.Snapshot)
-	require.Equal(t, `{"abc.count-inc":{"data":5,"sequence":13}}`, o.Increments[0])
-
-	// Second Increment
-	h.routeMessage(&Event{
-		Scope:  "public",
-		Stream: "abc",
-		Type:   "count-inc",
-		Topic:  "abc.count-inc",
-		Body: map[string]interface{}{
-			"data":     6,
-			"sequence": 14,
-		},
-	})
-	require.Equal(t, 1, len(h.IncrementalObjects))
-	o, ok = h.IncrementalObjects["abc.count-inc"]
-	require.True(t, ok)
-	require.Equal(t, 2, len(o.Increments))
-	require.Equal(t, `{"abc.count-snap":{"data":[2,3,4],"sequence":12}}`, o.Snapshot)
-	require.Equal(t, `{"abc.count-inc":{"data":5,"sequence":13}}`, o.Increments[0])
-	require.Equal(t, `{"abc.count-inc":{"data":6,"sequence":14}}`, o.Increments[1])
-
-	// Second snapshot
-	h.routeMessage(&Event{
-		Scope:  "public",
-		Stream: "abc",
-		Type:   "count-snap",
-		Topic:  "abc.count-inc",
-		Body: map[string]interface{}{
-			"data":     []int{2, 3, 4, 5, 6},
-			"sequence": 14,
-		},
-	})
-
-	require.Equal(t, 1, len(h.IncrementalObjects))
-	o, ok = h.IncrementalObjects["abc.count-inc"]
-	require.True(t, ok)
-	require.Equal(t, 0, len(o.Increments))
-	require.Equal(t, `{"abc.count-snap":{"data":[2,3,4,5,6],"sequence":14}}`, o.Snapshot)
 }

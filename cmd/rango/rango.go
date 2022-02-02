@@ -12,20 +12,18 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"github.com/zsmartex/pkg/wrap/kafka"
 
-	"github.com/confluentinc/confluent-kafka-go/kafka"
-	"github.com/zsmartex/pkg/services"
-
+	"github.com/zsmartex/rango/config"
 	"github.com/zsmartex/rango/pkg/auth"
 	"github.com/zsmartex/rango/pkg/metrics"
 	"github.com/zsmartex/rango/pkg/routing"
 )
 
 var (
-	wsAddr   = flag.String("ws-addr", "", "http service address")
-	amqpAddr = flag.String("amqp-addr", "", "AMQP server address")
-	pubKey   = flag.String("pubKey", "config/rsa-key.pub", "Path to public key")
-	exName   = flag.String("exchange", "rango.events", "Exchange name of upstream messages")
+	wsAddr = flag.String("ws-addr", "", "http service address")
+	pubKey = flag.String("pubKey", "config/rsa-key.pub", "Path to public key")
+	exName = flag.String("exchange", "rango.events", "Exchange name of upstream messages")
 )
 
 const prefix = "Bearer "
@@ -162,10 +160,25 @@ func main() {
 		return
 	}
 
-	kafka_client := services.NewKafka()
+	config.InitializeConfig()
 
 	go func() {
-		kafka_client.Subscribe(*exName, func(msg *kafka.Message) error {
+		// consumer, _ := config.Kafka.CreateConsumer([]string{*exName})
+
+		// for {
+		// 	messages, err := consumer.Consume(context.Background())
+		// 	if err != nil {
+		// 		config.Logger.Printf("Consumer error: %v (%v)\n", err, messages)
+		// 	}
+
+		// 	for _, message := range messages {
+		// 		hub.ReceiveMsg(message)
+
+		// 		message.Session.MarkMessage(message.SamMsg, "")
+		// 	}
+		// }
+
+		config.Kafka.Subscribe([]string{*exName}, func(msg kafka.Message) error {
 			hub.ReceiveMsg(msg)
 
 			return nil

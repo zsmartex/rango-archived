@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/rs/zerolog/log"
+	"github.com/zsmartex/rango/config"
 	msg "github.com/zsmartex/rango/pkg/message"
 )
 
@@ -42,12 +43,19 @@ func (t *Topic) len() int {
 }
 
 func (t *Topic) broadcast(message *Event) {
+	var bodyMsg interface{}
+
+	if err := json.Unmarshal(message.Body, &bodyMsg); err != nil {
+		config.Logger.Errorf("Fail to JSON marshal: %s", err.Error())
+		return
+	}
+
 	body, err := json.Marshal(map[string]interface{}{
-		message.Topic: message.Body,
+		message.Topic: bodyMsg,
 	})
 
 	if err != nil {
-		log.Error().Msgf("Fail to JSON marshal: %s", err.Error())
+		config.Logger.Errorf("Fail to JSON marshal: %s", err.Error())
 		return
 	}
 
@@ -56,9 +64,9 @@ func (t *Topic) broadcast(message *Event) {
 	}
 }
 
-func (t *Topic) broadcastRaw(msgBody string) {
+func (t *Topic) broadcastRaw(msg []byte) {
 	for client := range t.clients {
-		client.Send(msgBody)
+		client.Send(string(msg))
 	}
 }
 

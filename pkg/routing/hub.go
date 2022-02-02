@@ -5,9 +5,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"github.com/zsmartex/pkg/wrap/kafka"
+
 	msg "github.com/zsmartex/rango/pkg/message"
 	"github.com/zsmartex/rango/pkg/metrics"
 )
@@ -35,9 +36,6 @@ type Hub struct {
 	// map[prefix -> map[topic -> *Topic]]
 	PrefixedTopics map[string]map[string]*Topic
 
-	// Storage for incremental objects
-	IncrementalObjects map[string]*IncrementalObject
-
 	// map[prefix -> allowed roles]
 	RBAC map[string][]string
 
@@ -45,27 +43,21 @@ type Hub struct {
 }
 
 type Event struct {
-	Scope  string      // global, public, private
-	Stream string      // channel routing key
-	Type   string      // event type
-	Topic  string      // topic routing key (stream.type)
-	Body   interface{} // event json body
-}
-
-type IncrementalObject struct {
-	Snapshot   string
-	Increments []string
+	Scope  string // global, public, private
+	Stream string // channel routing key
+	Type   string // event type
+	Topic  string // topic routing key (stream.type)
+	Body   []byte // event json body
 }
 
 func NewHub(rbac map[string][]string) *Hub {
 	return &Hub{
-		Requests:           make(chan Request),
-		Unregister:         make(chan IClient),
-		PublicTopics:       make(map[string]*Topic, 100),
-		PrivateTopics:      make(map[string]map[string]*Topic, 1000),
-		PrefixedTopics:     make(map[string]map[string]*Topic, 100),
-		IncrementalObjects: make(map[string]*IncrementalObject, 5),
-		RBAC:               rbac,
+		Requests:       make(chan Request),
+		Unregister:     make(chan IClient),
+		PublicTopics:   make(map[string]*Topic, 100),
+		PrivateTopics:  make(map[string]map[string]*Topic, 1000),
+		PrefixedTopics: make(map[string]map[string]*Topic, 100),
+		RBAC:           rbac,
 	}
 }
 
@@ -99,7 +91,7 @@ func (h *Hub) ListenWebsocketEvents() {
 }
 
 // ReceiveMsg handles AMQP messages
-func (h *Hub) ReceiveMsg(msg *kafka.Message) {
+func (h *Hub) ReceiveMsg(msg kafka.Message) {
 	key_arr := strings.Split(string(msg.Key), ".") // public.ethusdt.depth | private.UIDABC00001.balance
 	scope := key_arr[0]
 
