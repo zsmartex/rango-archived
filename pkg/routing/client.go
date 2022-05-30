@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -35,9 +36,7 @@ var (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
+	CheckOrigin:     checkSameOrigin(os.Getenv("API_CORS_ORIGINS")),
 }
 
 var maxBufferedMessages = 256
@@ -79,15 +78,7 @@ type Client struct {
 func checkSameOrigin(origins string) func(r *http.Request) bool {
 	if origins == "" {
 		return func(r *http.Request) bool {
-			origin := r.Header["Origin"]
-			if len(origin) == 0 {
-				return true
-			}
-			u, err := url.Parse(origin[0])
-			if err != nil {
-				return false
-			}
-			return strings.EqualFold(u.Host, r.Host)
+			return true
 		}
 	}
 

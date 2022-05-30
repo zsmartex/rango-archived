@@ -9,11 +9,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/zsmartex/pkg/wrap/kafka"
 
+	"github.com/zsmartex/pkg/services"
 	"github.com/zsmartex/rango/config"
 	"github.com/zsmartex/rango/pkg/auth"
 	"github.com/zsmartex/rango/pkg/metrics"
@@ -160,30 +161,31 @@ func main() {
 		return
 	}
 
-	config.InitializeConfig()
+	kafka_brokers := strings.Split(os.Getenv("KAFKA_BROKERS"), ",")
+	consumer, err := services.NewKafkaConsumer(kafka_brokers, fmt.Sprintf("rango-%s", uuid.NewString()), []string{*exName})
+	if err != nil {
+		log.Error().Msgf("Failed to create consumer: %s", err.Error())
+		return
+	}
+
+	log.Info().Msg("Starting rango...")
 
 	go func() {
-		// consumer, _ := config.Kafka.CreateConsumer([]string{*exName})
+		for {
+			records, err := consumer.Poll()
+			if err != nil {
+				config.Logger.Fatalf("Failed to poll consumer %v", err)
+			}
 
-		// for {
-		// 	messages, err := consumer.Consume(context.Background())
-		// 	if err != nil {
-		// 		config.Logger.Printf("Consumer error: %v (%v)\n", err, messages)
-		// 	}
+			for _, r := range records {
+				hub.ReceiveMsg(r)
 
-		// 	for _, message := range messages {
-		// 		hub.ReceiveMsg(message)
-
-		// 		message.Session.MarkMessage(message.SamMsg, "")
-		// 	}
-		// }
-
-		config.Kafka.Subscribe([]string{*exName}, func(msg kafka.Message) error {
-			hub.ReceiveMsg(msg)
-
-			return nil
-		})
+				consumer.CommitRecords(*r)
+			}
+		}
 	}()
+
+	defer consumer.Client.Close()
 
 	go hub.ListenWebsocketEvents()
 

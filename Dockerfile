@@ -1,6 +1,6 @@
-FROM golang:1.16-alpine AS builder
+FROM golang:1.18.1-alpine AS builder
 
-RUN apk add --no-cache curl
+RUN apk add --no-cache curl git
 
 ARG KAIGARA_VERSION=0.1.29
 # Install Kaigara

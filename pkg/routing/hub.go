@@ -7,7 +7,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/zsmartex/pkg/wrap/kafka"
+	"github.com/twmb/franz-go/pkg/kgo"
 
 	msg "github.com/zsmartex/rango/pkg/message"
 	"github.com/zsmartex/rango/pkg/metrics"
@@ -91,7 +91,7 @@ func (h *Hub) ListenWebsocketEvents() {
 }
 
 // ReceiveMsg handles AMQP messages
-func (h *Hub) ReceiveMsg(msg kafka.Message) {
+func (h *Hub) ReceiveMsg(msg *kgo.Record) {
 	key_arr := strings.Split(string(msg.Key), ".") // public.ethusdt.depth | private.UIDABC00001.balance
 	scope := key_arr[0]
 
