@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rsa"
 	"flag"
 	"fmt"
@@ -13,9 +14,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"github.com/twmb/franz-go/pkg/kgo"
 
-	"github.com/zsmartex/pkg/services"
-	"github.com/zsmartex/rango/config"
 	"github.com/zsmartex/rango/pkg/auth"
 	"github.com/zsmartex/rango/pkg/metrics"
 	"github.com/zsmartex/rango/pkg/routing"
@@ -161,8 +161,13 @@ func main() {
 		return
 	}
 
-	kafka_brokers := strings.Split(os.Getenv("KAFKA_BROKERS"), ",")
-	consumer, err := services.NewKafkaConsumer(kafka_brokers, fmt.Sprintf("rango-%s", uuid.NewString()), []string{*exName})
+	kafkaBrokers := strings.Split(os.Getenv("KAFKA_BROKERS"), ",")
+	kgoClient, err := kgo.NewClient(
+		kgo.SeedBrokers(kafkaBrokers...),
+		kgo.ConsumerGroup(fmt.Sprintf("rango-%s", uuid.NewString())),
+		kgo.ConsumeTopics(*exName),
+		kgo.DisableAutoCommit(),
+	)
 	if err != nil {
 		log.Error().Msgf("Failed to create consumer: %s", err.Error())
 		return
@@ -172,20 +177,21 @@ func main() {
 
 	go func() {
 		for {
-			records, err := consumer.Poll()
-			if err != nil {
-				config.Logger.Fatalf("Failed to poll consumer %v", err)
+			fetches := kgoClient.PollFetches(context.Background())
+			for i, fe := range fetches.Errors() {
+				log.Error().Msgf("Fetch error %d: %v", i, fe.Err)
 			}
 
+			records := fetches.Records()
 			for _, r := range records {
 				hub.ReceiveMsg(r)
 
-				consumer.CommitRecords(*r)
+				kgoClient.CommitRecords(context.Background(), r)
 			}
 		}
 	}()
 
-	defer consumer.Client.Close()
+	defer kgoClient.Close()
 
 	go hub.ListenWebsocketEvents()
 
