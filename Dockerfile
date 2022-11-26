@@ -19,7 +19,7 @@ COPY . .
 RUN go build ./cmd/rango
 
 
-FROM alpine:3.9
+FROM alpine:3.17
 
 RUN apk add ca-certificates
 WORKDIR app
