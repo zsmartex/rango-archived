@@ -9,7 +9,7 @@ require (
 	github.com/prometheus/client_golang v1.6.0
 	github.com/rs/zerolog v1.18.0
 	github.com/stretchr/testify v1.7.0
-	github.com/twmb/franz-go v1.10.0
+	github.com/twmb/franz-go v1.11.0
 )
 
 require (
